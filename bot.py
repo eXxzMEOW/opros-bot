@@ -1,10 +1,7 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 from database import Database
 from tests import tests_data
@@ -14,14 +11,11 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
 
-# Состояния для ConversationHandler
-CHOOSING_TEST, SOLVING_TEST, VIEW_RESULTS = range(3)
-
 
 class TestBot:
     def __init__(self):
         print("\n" + "=" * 60)
-        print("🤖 ИНИЦИАЛИЗАЦИЯ ТЕСТОВОГО БОТА")
+        print("🤖 ЗАГРУЗКА БОТА")
         print("=" * 60)
 
         # Инициализация базы данных
@@ -36,12 +30,9 @@ class TestBot:
         self.tests = tests_data
         print(f"✅ Загружено тестов: {len(self.tests)}")
 
-        # Вывод информации о тестах для отладки
         for test_id, test in self.tests.items():
-            print(f"   ├─ ID: '{test_id}'")
-            print(f"   ├─ Название: {test['title']}")
-            print(f"   ├─ Вопросов: {len(test['questions'])}")
-            print(f"   └─ Callback: test_{test_id}")
+            print(f"   ├─ {test['title']}")
+            print(f"   └─ Вопросов: {len(test['questions'])}")
 
         print("=" * 60 + "\n")
 
@@ -55,8 +46,7 @@ class TestBot:
 
         keyboard = [
             [InlineKeyboardButton("📋 Список тестов", callback_data='list_tests')],
-            [InlineKeyboardButton("📊 Мои результаты", callback_data='my_results')],
-            [InlineKeyboardButton("❓ Помощь", callback_data='help')]
+            [InlineKeyboardButton("📊 Мои результаты", callback_data='my_results')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -69,34 +59,6 @@ class TestBot:
             reply_markup=reply_markup
         )
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда помощи"""
-        query = update.callback_query
-        await query.answer()
-
-        help_text = (
-            "📚 <b>Помощь по боту:</b>\n\n"
-            "1. <b>📋 Список тестов</b> - выбрать тест для прохождения\n"
-            "2. <b>📊 Мои результаты</b> - посмотреть историю прохождения\n"
-            "3. <b>❓ Помощь</b> - это сообщение\n\n"
-            "📝 <b>Как пройти тест:</b>\n"
-            "1. Выберите тест из списка\n"
-            "2. Нажмите 'Начать тест'\n"
-            "3. Отвечайте на вопросы, выбирая варианты\n"
-            "4. В конце увидите результат\n\n"
-            "🔄 <b>Команды:</b>\n"
-            "/start - начать работу с ботом\n"
-            "/help - показать это сообщение"
-        )
-
-        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_menu')]]
-
-        await query.edit_message_text(
-            help_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-
     async def list_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список тестов"""
         query = update.callback_query
@@ -105,12 +67,7 @@ class TestBot:
         print(f"\n📋 ПОЛЬЗОВАТЕЛЬ ЗАПРОСИЛ СПИСОК ТЕСТОВ")
 
         if not self.tests:
-            await query.edit_message_text(
-                "📭 Тесты еще не добавлены!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_menu')]
-                ])
-            )
+            await query.edit_message_text("📭 Нет доступных тестов")
             return
 
         keyboard = []
@@ -118,6 +75,8 @@ class TestBot:
             question_count = len(test['questions'])
             button_text = f"{test['title']} ({question_count} вопр.)"
             callback_data = f'test_{test_id}'
+
+            print(f"   Создаю кнопку: {button_text} -> {callback_data}")
 
             keyboard.append([InlineKeyboardButton(
                 button_text,
@@ -132,21 +91,20 @@ class TestBot:
             "📚 <b>Доступные тесты:</b>\n\n"
             f"📊 Всего тестов: <b>{len(self.tests)}</b>\n"
             f"❓ Всего вопросов: <b>{total_questions}</b>\n\n"
-            "<i>Выберите тест для прохождения:</i>",
+            "<i>Выберите тест:</i>",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
-        return CHOOSING_TEST
 
-    async def start_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начать выбранный тест"""
+    async def handle_test_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка выбора теста"""
         query = update.callback_query
         await query.answer()
 
-        # Получаем callback_data
+        # Получаем callback_data (формат: test_math_test)
         callback_data = query.data
 
-        print(f"\n🎯 ПОЛЬЗОВАТЕЛЬ ВЫБРАЛ ТЕСТ: {callback_data}")
+        print(f"\n🎯 ВЫБРАН ТЕСТ: {callback_data}")
 
         # Извлекаем test_id
         if not callback_data.startswith('test_'):
@@ -154,7 +112,8 @@ class TestBot:
             return
 
         test_id = callback_data[5:]  # Убираем "test_"
-        print(f"   test_id: '{test_id}'")
+        print(f"   ID теста: '{test_id}'")
+        print(f"   Доступные тесты: {list(self.tests.keys())}")
 
         # Ищем тест
         test = self.tests.get(test_id)
@@ -163,15 +122,17 @@ class TestBot:
             await query.edit_message_text(f"❌ Тест '{test_id}' не найден")
             return
 
-        print(f"   ✅ Найден: {test['title']}")
+        print(f"   ✅ Найден тест: {test['title']}")
 
-        # Сохраняем информацию о текущем тесте
+        # Инициализируем данные теста в context.user_data
         context.user_data['current_test'] = test_id
         context.user_data['current_question'] = 0
         context.user_data['answers'] = []
         context.user_data['score'] = 0
 
-        print(f"   💾 Сохранено в user_data")
+        print(f"   💾 Сохранено в user_data:")
+        print(f"      current_test: {test_id}")
+        print(f"      current_question: 0")
 
         # Показываем информацию о тесте
         keyboard = [
@@ -191,50 +152,62 @@ class TestBot:
             parse_mode='HTML'
         )
 
-    async def show_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать вопрос"""
+    async def start_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Начать тест (обработка begin_)"""
         query = update.callback_query
         await query.answer()
 
-        print(f"\n❓ ОБРАБОТКА BEGIN_: {query.data}")
+        # Получаем callback_data (формат: begin_math_test)
+        callback_data = query.data
 
-        # Если пришел begin_, извлекаем test_id
-        if query.data.startswith('begin_'):
-            test_id = query.data[6:]  # Убираем "begin_"
-            print(f"   Начинаем тест: {test_id}")
+        print(f"\n🚀 НАЧАЛО ТЕСТА: {callback_data}")
 
-            # Устанавливаем начальные значения
-            context.user_data['current_test'] = test_id
-            context.user_data['current_question'] = 0
-            context.user_data['answers'] = []
-            context.user_data['score'] = 0
+        # Извлекаем test_id
+        test_id = callback_data[6:]  # Убираем "begin_"
+        print(f"   ID теста: '{test_id}'")
 
-        # Получаем данные из контекста
+        # Устанавливаем данные теста
+        context.user_data['current_test'] = test_id
+        context.user_data['current_question'] = 0
+        context.user_data['answers'] = []
+        context.user_data['score'] = 0
+
+        # Показываем первый вопрос
+        await self.show_question(update, context)
+
+    async def show_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать текущий вопрос"""
+        query = update.callback_query if hasattr(update, 'callback_query') else None
+
+        # Получаем данные теста
         test_id = context.user_data.get('current_test')
         question_idx = context.user_data.get('current_question', 0)
 
+        print(f"\n❓ ПОКАЗ ВОПРОСА")
         print(f"   test_id: '{test_id}'")
         print(f"   question_idx: {question_idx}")
 
         # Проверяем данные
         if not test_id or test_id not in self.tests:
-            print(f"   ❌ Ошибка: тест не найден")
-            await query.edit_message_text("❌ Ошибка: тест не найден")
+            if query:
+                await query.edit_message_text("❌ Ошибка: тест не найден")
             return
 
         test = self.tests[test_id]
 
         # Проверяем, есть ли еще вопросы
         if question_idx >= len(test['questions']):
-            print(f"   ⚠️ Вопросов больше нет")
+            print(f"   🏁 Вопросов больше нет, завершаем тест")
             await self.show_results(update, context)
             return
 
+        # Получаем вопрос
         question = test['questions'][question_idx]
 
         print(f"   📝 Вопрос {question_idx + 1}/{len(test['questions'])}")
+        print(f"   Текст: {question['text'][:50]}...")
 
-        # Создаем клавиатуру с вариантами ответов
+        # Создаем кнопки с вариантами ответов
         keyboard = []
         for idx, option in enumerate(question['options']):
             keyboard.append([InlineKeyboardButton(
@@ -243,51 +216,88 @@ class TestBot:
             )])
 
         # Добавляем кнопку отмены
-        keyboard.append([InlineKeyboardButton("🚫 Завершить тест", callback_data='cancel_test')])
+        keyboard.append([InlineKeyboardButton("🚫 Отменить тест", callback_data='cancel_test')])
 
-        await query.edit_message_text(
-            f"📝 <b>Вопрос {question_idx + 1}/{len(test['questions'])}</b>\n\n"
-            f"{question['text']}",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-        return SOLVING_TEST
+        # Показываем вопрос
+        if query:
+            await query.edit_message_text(
+                f"📝 <b>Вопрос {question_idx + 1}/{len(test['questions'])}</b>\n\n"
+                f"{question['text']}",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+        else:
+            # Если вызываем из другого места (например из handle_answer)
+            await update.edit_message_text(
+                f"📝 <b>Вопрос {question_idx + 1}/{len(test['questions'])}</b>\n\n"
+                f"{question['text']}",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
 
     async def handle_answer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработать ответ пользователя"""
+        """Обработать ответ на вопрос"""
         query = update.callback_query
         await query.answer()
 
-        # Получаем данные
-        test_id = context.user_data['current_test']
-        question_idx = context.user_data['current_question']
-        answer_idx = int(query.data.split('_')[1])
+        print(f"\n✅ ОБРАБОТКА ОТВЕТА")
+        print(f"   Callback: {query.data}")
 
-        print(f"\n✅ ОТВЕТ: test={test_id}, question={question_idx}, answer={answer_idx}")
+        # Получаем индекс ответа
+        answer_idx = int(query.data.split('_')[1])
+        print(f"   Ответ пользователя: {answer_idx}")
+
+        # Получаем данные теста
+        test_id = context.user_data.get('current_test')
+        question_idx = context.user_data.get('current_question', 0)
+
+        print(f"   Текущий тест: {test_id}")
+        print(f"   Текущий вопрос: {question_idx}")
+
+        # Проверяем данные
+        if not test_id or test_id not in self.tests:
+            await query.edit_message_text("❌ Ошибка: тест не найден")
+            return
 
         test = self.tests[test_id]
+
+        # Проверяем, что вопрос существует
+        if question_idx >= len(test['questions']):
+            print(f"   ⚠️ Вопросов больше нет")
+            await self.show_results(update, context)
+            return
+
         question = test['questions'][question_idx]
 
-        # Проверяем ответ
+        # Проверяем правильность ответа
         is_correct = answer_idx == question['correct_answer']
+        print(f"   Правильный ответ: {question['correct_answer']}")
+        print(f"   Ответ верный: {is_correct}")
 
+        # Увеличиваем счет если правильно
         if is_correct:
-            context.user_data['score'] += 1
+            context.user_data['score'] = context.user_data.get('score', 0) + 1
 
         # Сохраняем ответ
-        context.user_data['answers'].append({
+        context.user_data.setdefault('answers', []).append({
             'question': question['text'],
             'user_answer': answer_idx,
-            'correct_answer': question['correct_answer'],
-            'is_correct': is_correct,
             'user_answer_text': question['options'][answer_idx],
-            'correct_answer_text': question['options'][question['correct_answer']]
+            'correct_answer': question['correct_answer'],
+            'correct_answer_text': question['options'][question['correct_answer']],
+            'is_correct': is_correct
         })
 
-        # Переходим к следующему вопросу
-        context.user_data['current_question'] += 1
+        print(f"   🎯 Текущий счет: {context.user_data['score']}")
 
+        # Переходим к следующему вопросу
+        context.user_data['current_question'] = question_idx + 1
+        print(f"   Следующий вопрос: {context.user_data['current_question']}")
+
+        # Проверяем, есть ли еще вопросы
         if context.user_data['current_question'] < len(test['questions']):
+            print(f"   ⏭️ Переход к следующему вопросу")
+            # Показываем следующий вопрос
             await self.show_question(update, context)
         else:
             # Тест завершен
@@ -296,41 +306,55 @@ class TestBot:
 
     async def show_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать результаты теста"""
-        test_id = context.user_data['current_test']
+        query = update.callback_query if hasattr(update, 'callback_query') else None
+
+        print(f"\n🏁 ПОКАЗ РЕЗУЛЬТАТОВ")
+
+        # Получаем данные
+        test_id = context.user_data.get('current_test')
+        score = context.user_data.get('score', 0)
+        answers = context.user_data.get('answers', [])
+
+        print(f"   test_id: {test_id}")
+        print(f"   score: {score}")
+        print(f"   answers: {len(answers)}")
+
+        if not test_id or test_id not in self.tests:
+            if query:
+                await query.edit_message_text("❌ Ошибка: тест не найден")
+            return
+
         test = self.tests[test_id]
-        score = context.user_data['score']
         total = len(test['questions'])
         percentage = round(score / total * 100, 1) if total > 0 else 0
 
-        print(f"\n🏁 РЕЗУЛЬТАТЫ: {score}/{total} ({percentage}%)")
+        print(f"   total: {total}")
+        print(f"   percentage: {percentage}%")
 
         # Сохраняем результат в БД
-        if self.db:
-            user_id = update.effective_user.id
-            self.db.save_result(
-                user_id,
-                test_id,
-                score,
-                total,
-                context.user_data['answers']
-            )
+        if self.db and query:
+            user_id = query.from_user.id
+            self.db.save_result(user_id, test_id, score, total, answers)
+            print(f"   💾 Результат сохранен в БД")
 
-        # Формируем сообщение
+        # Формируем сообщение с результатами
         result_text = f"✅ <b>Тест завершен!</b>\n\n"
         result_text += f"📝 <b>{test['title']}</b>\n\n"
         result_text += f"📊 <b>Результаты:</b>\n"
-        result_text += f"   🎯 Правильных: <b>{score}/{total}</b>\n"
-        result_text += f"   📈 Процент: <b>{percentage}%</b>\n\n"
+        result_text += f"   🎯 Правильных ответов: <b>{score}/{total}</b>\n"
+        result_text += f"   📈 Процент выполнения: <b>{percentage}%</b>\n\n"
 
         # Оценка результата
         if percentage == 100:
-            result_text += "🏆 <b>Отлично! Идеально!</b> 🎉\n"
+            result_text += "🏆 <b>Отличный результат! Идеально!</b> 🎉\n"
+        elif percentage >= 80:
+            result_text += "👍 <b>Очень хороший результат!</b>\n"
         elif percentage >= 70:
-            result_text += "👍 <b>Хороший результат!</b>\n"
+            result_text += "✅ <b>Хороший результат!</b>\n"
+        elif percentage >= 50:
+            result_text += "😐 <b>Неплохо, но можно лучше</b>\n"
         else:
-            result_text += "📚 <b>Попробуйте еще раз</b>\n"
-
-        result_text += f"\n<i>Выберите действие:</i>"
+            result_text += "📚 <b>Стоит повторить материал</b>\n"
 
         # Кнопки
         keyboard = [
@@ -340,13 +364,12 @@ class TestBot:
             [InlineKeyboardButton("🏠 В главное меню", callback_data='back_to_menu')]
         ]
 
-        query = update.callback_query
-        await query.edit_message_text(
-            result_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-        return VIEW_RESULTS
+        if query:
+            await query.edit_message_text(
+                result_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
 
     async def view_detailed_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать детальные результаты"""
@@ -355,97 +378,19 @@ class TestBot:
 
         print(f"\n🔍 ДЕТАЛЬНЫЕ РЕЗУЛЬТАТЫ")
 
-        answers = context.user_data['answers']
+        answers = context.user_data.get('answers', [])
         detailed_text = "📖 <b>Детальные результаты:</b>\n\n"
 
         for i, answer in enumerate(answers, 1):
             status = "✅" if answer['is_correct'] else "❌"
             detailed_text += f"<b>Вопрос {i}:</b> {answer['question']}\n"
             detailed_text += f"   Ваш ответ: {answer['user_answer_text']}\n"
-            detailed_text += f"   {status} Правильный: {answer['correct_answer_text']}\n\n"
+            detailed_text += f"   {status} Правильный ответ: {answer['correct_answer_text']}\n\n"
 
-        keyboard = [
-            [InlineKeyboardButton("⬅️ Назад к результатам", callback_data='back_to_results')],
-            [InlineKeyboardButton("🏠 В главное меню", callback_data='back_to_menu')]
-        ]
+        keyboard = [[InlineKeyboardButton("⬅️ Назад к результатам", callback_data='back_to_results')]]
 
         await query.edit_message_text(
             detailed_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-
-    async def cancel_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отменить тест"""
-        query = update.callback_query
-        await query.answer()
-
-        print(f"\n🚫 ТЕСТ ОТМЕНЕН")
-
-        context.user_data.clear()
-
-        keyboard = [
-            [InlineKeyboardButton("📋 Список тестов", callback_data='list_tests')],
-            [InlineKeyboardButton("🏠 В главное меню", callback_data='back_to_menu')]
-        ]
-
-        await query.edit_message_text(
-            "❌ <b>Тест отменен</b>\n\n"
-            "Прогресс удален.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-        return ConversationHandler.END
-
-    async def back_to_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Вернуться в главное меню"""
-        query = update.callback_query
-        await query.answer()
-
-        print(f"\n🏠 ВОЗВРАТ В ГЛАВНОЕ МЕНЮ")
-
-        context.user_data.clear()
-
-        keyboard = [
-            [InlineKeyboardButton("📋 Список тестов", callback_data='list_tests')],
-            [InlineKeyboardButton("📊 Мои результаты", callback_data='my_results')],
-            [InlineKeyboardButton("❓ Помощь", callback_data='help')]
-        ]
-
-        await query.edit_message_text(
-            "🏠 <b>Главное меню</b>\n\n"
-            "Выберите действие:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-        return ConversationHandler.END
-
-    async def my_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать историю результатов пользователя"""
-        query = update.callback_query
-        await query.answer()
-
-        print(f"\n📊 РЕЗУЛЬТАТЫ ПОЛЬЗОВАТЕЛЯ")
-
-        user_id = update.effective_user.id
-        results = self.db.get_user_results(user_id) if self.db else []
-
-        print(f"   Найдено: {len(results)} результатов")
-
-        if not results:
-            text = "📭 <b>У вас еще нет результатов тестов</b>"
-        else:
-            text = "📊 <b>Ваши результаты:</b>\n\n"
-            for i, result in enumerate(results[:5], 1):
-                test_title = self.tests.get(result['test_id'], {}).get('title', 'Неизвестный тест')
-                text += f"<b>{i}. {test_title}</b>\n"
-                text += f"   📅 {result['date']}\n"
-                text += f"   🎯 {result['score']}/{result['total']} ({result['percentage']}%)\n\n"
-
-        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_menu')]]
-
-        await query.edit_message_text(
-            text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
@@ -459,63 +404,129 @@ class TestBot:
 
         await self.show_results(update, context)
 
+    async def cancel_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отменить тест"""
+        query = update.callback_query
+        await query.answer()
+
+        print(f"\n🚫 ОТМЕНА ТЕСТА")
+
+        # Очищаем данные
+        context.user_data.clear()
+
+        keyboard = [
+            [InlineKeyboardButton("📋 Список тестов", callback_data='list_tests')],
+            [InlineKeyboardButton("🏠 В главное меню", callback_data='back_to_menu')]
+        ]
+
+        await query.edit_message_text(
+            "❌ <b>Тест отменен</b>\n\n"
+            "Все данные удалены.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+
+    async def back_to_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Вернуться в главное меню"""
+        query = update.callback_query
+        await query.answer()
+
+        print(f"\n🏠 ВОЗВРАТ В ГЛАВНОЕ МЕНЮ")
+
+        # Очищаем данные
+        context.user_data.clear()
+
+        keyboard = [
+            [InlineKeyboardButton("📋 Список тестов", callback_data='list_tests')],
+            [InlineKeyboardButton("📊 Мои результаты", callback_data='my_results')]
+        ]
+
+        await query.edit_message_text(
+            "🏠 <b>Главное меню</b>\n\n"
+            "Выберите действие:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+
+    async def my_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать историю результатов пользователя"""
+        query = update.callback_query
+        await query.answer()
+
+        print(f"\n📊 ИСТОРИЯ РЕЗУЛЬТАТОВ")
+
+        if not self.db:
+            await query.edit_message_text("❌ База данных не подключена")
+            return
+
+        user_id = query.from_user.id
+        results = self.db.get_user_results(user_id)
+
+        if not results:
+            text = "📭 <b>У вас еще нет результатов тестов</b>\n\n"
+            text += "Пройти тесты можно через меню:\n"
+            text += "📋 Список тестов → Выберите тест → Начать тест"
+        else:
+            text = "📊 <b>Ваши результаты:</b>\n\n"
+            for i, result in enumerate(results[:5], 1):
+                test_title = self.tests.get(result['test_id'], {}).get('title', 'Неизвестный тест')
+                text += f"<b>{i}. {test_title}</b>\n"
+                text += f"   📅 {result['date']}\n"
+                text += f"   🎯 {result['score']}/{result['total']}\n"
+                text += f"   📈 {result['percentage']}%\n\n"
+
+        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_menu')]]
+
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+
     def run(self):
         """Запуск бота"""
         if not TOKEN:
             print("❌ ОШИБКА: BOT_TOKEN не найден!")
+            print("   Создайте файл .env с содержимым:")
+            print("   BOT_TOKEN=ваш_токен_от_BotFather")
             return
 
         print("🚀 Запускаю бота...")
+        print(f"   Токен: {TOKEN[:10]}...")
+        print(f"   Тестов: {len(self.tests)}")
+        print("\n" + "=" * 60)
+        print("🤖 Бот запущен и готов к работе!")
+        print("   Напишите /start в Telegram")
+        print("   Для остановки: Ctrl+C")
+        print("=" * 60 + "\n")
 
         application = Application.builder().token(TOKEN).build()
 
-        # ВАЖНО: ConversationHandler с правильными состояниями
-        conv_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.list_tests, pattern='^list_tests$')],
-            states={
-                CHOOSING_TEST: [
-                    CallbackQueryHandler(self.start_test, pattern='^test_'),
-                    CallbackQueryHandler(self.back_to_menu, pattern='^back_to_menu$')
-                ],
-                SOLVING_TEST: [
-                    CallbackQueryHandler(self.handle_answer, pattern='^answer_'),
-                    CallbackQueryHandler(self.show_question, pattern='^begin_'),  # ← ЭТО ВАЖНО!
-                    CallbackQueryHandler(self.cancel_test, pattern='^cancel_test$')
-                ],
-                VIEW_RESULTS: [
-                    CallbackQueryHandler(self.view_detailed_results, pattern='^view_details$'),
-                    CallbackQueryHandler(self.back_to_menu, pattern='^back_to_menu$'),
-                    CallbackQueryHandler(self.back_to_results, pattern='^back_to_results$')
-                ]
-            },
-            fallbacks=[
-                CommandHandler('start', self.start),
-                CallbackQueryHandler(self.back_to_menu, pattern='^back_to_menu$')
-            ]
-        )
-
         # Регистрация обработчиков
         application.add_handler(CommandHandler('start', self.start))
-        application.add_handler(CommandHandler('help', self.start))
 
-        application.add_handler(conv_handler)
-
-        # Отдельные обработчики для callback
-        application.add_handler(CallbackQueryHandler(self.my_results, pattern='^my_results$'))
-        application.add_handler(CallbackQueryHandler(self.help_command, pattern='^help$'))
+        # Обработчики callback-запросов
+        application.add_handler(CallbackQueryHandler(self.list_tests, pattern='^list_tests$'))
+        application.add_handler(CallbackQueryHandler(self.handle_test_selection, pattern='^test_'))
+        application.add_handler(CallbackQueryHandler(self.start_test, pattern='^begin_'))
+        application.add_handler(CallbackQueryHandler(self.handle_answer, pattern='^answer_'))
+        application.add_handler(CallbackQueryHandler(self.view_detailed_results, pattern='^view_details$'))
+        application.add_handler(CallbackQueryHandler(self.back_to_results, pattern='^back_to_results$'))
+        application.add_handler(CallbackQueryHandler(self.cancel_test, pattern='^cancel_test$'))
         application.add_handler(CallbackQueryHandler(self.back_to_menu, pattern='^back_to_menu$'))
+        application.add_handler(CallbackQueryHandler(self.my_results, pattern='^my_results$'))
 
-        # Добавьте этот обработчик для отладки
-        application.add_handler(CallbackQueryHandler(self.show_question, pattern='^begin_'))
+        # Для отладки: обработчик всех callback
+        application.add_handler(CallbackQueryHandler(self.debug_callback))
 
-        print("\n" + "=" * 60)
-        print("🤖 Бот запущен!")
-        print("=" * 60 + "\n")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+    async def debug_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отладочный обработчик для всех callback"""
+        query = update.callback_query
+        print(f"\n🔍 DEBUG CALLBACK: {query.data}")
+        print(f"   user_data: {context.user_data}")
+        await query.answer(f"Получен: {query.data}")
 
 
 if __name__ == '__main__':
